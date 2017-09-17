@@ -188,6 +188,7 @@ public:
     virtual void deallocate();
     virtual camera_memory_t *getMemory(int index, bool metadata) const;
     virtual int getMatchBufIndex(const void *opaque, bool metadata) const;
+    static int closeNativeHandle(const void *data);
 
 private:
     camera_memory_t *mMetadata[MM_CAMERA_MAX_NUM_FRAMES];
