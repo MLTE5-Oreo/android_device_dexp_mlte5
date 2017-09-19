@@ -56,11 +56,3 @@ on post-fs
     swapon_all /fstab.qcom
     write /proc/sys/vm/page-cluster 0
 
-service sensord /system/bin/sensord
-    class main
-    user root
-
-on property:init.svc.zygote=restarting
-    restart sensord
-
-
