@@ -23,6 +23,7 @@ PRODUCT_PROPERTY_OVERRIDES += \
 
 # RIL
 PRODUCT_PACKAGES += \
+    android.system.net.netd@1.0_hal \
     libcnefeatureconfig \
     librmnetctl \
     libxml2

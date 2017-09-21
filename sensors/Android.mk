@@ -36,6 +36,7 @@ LOCAL_SHARED_LIBRARIES := liblog libcutils libdl libxml2 libutils
 
 LOCAL_MODULE := sensors.msm8916
 LOCAL_MODULE_RELATIVE_PATH := hw
+LOCAL_PROPRIETARY_MODULE      := true
 LOCAL_MODULE_TAGS := optional
 
 include $(BUILD_SHARED_LIBRARY)
