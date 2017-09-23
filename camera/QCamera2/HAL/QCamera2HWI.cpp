@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundataion. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundataion. All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
 * modification, are permitted provided that the following conditions are
@@ -422,11 +422,42 @@ int QCamera2HardwareInterface::store_meta_data_in_buffers(
 int QCamera2HardwareInterface::start_recording(struct camera_device *device)
 {
     int ret = NO_ERROR;
+    int width, height;
     QCamera2HardwareInterface *hw =
         reinterpret_cast<QCamera2HardwareInterface *>(device->priv);
     if (!hw) {
         ALOGE("NULL camera device");
         return BAD_VALUE;
+    }
+    // Preview window changes for 720p and higher
+    hw->mParameters.getVideoSize(&width, &height);
+    if ((width * height) >= (1280 * 720)) {
+        char *orig_params = hw->getParameters();
+        if (orig_params) {
+            android::CameraParameters params;
+            params.unflatten(android::String8(orig_params));
+            hw->putParameters(orig_params);
+
+            // Set preview size to video size
+            char video_dim[10];
+            snprintf(video_dim, sizeof(video_dim), "%dx%d", width, height);
+            params.set("preview-size", video_dim);
+
+            const char *hfrStr = params.get("video-hfr");
+            const char *hsrStr = params.get("video-hsr");
+
+            // Use yuv420sp for high framerates
+            if ((hfrStr != NULL && strcmp(hfrStr, "off")) ||
+                (hsrStr != NULL && strcmp(hsrStr, "off")))
+                params.set("preview-format", "yuv420sp");
+            else
+                params.set("preview-format", "nv12-venus");
+
+            hw->set_parameters(device, params.flatten().string());
+            // Restart preview to propagate changes to preview window
+            hw->stop_preview(device);
+            hw->start_preview(device);
+        }
     }
     CDBG_HIGH("[KPI Perf] %s: E PROFILE_START_RECORDING", __func__);
     hw->lockAPI();
@@ -468,8 +499,29 @@ void QCamera2HardwareInterface::stop_recording(struct camera_device *device)
         hw->waitAPIResult(QCAMERA_SM_EVT_STOP_RECORDING, &apiResult);
     }
     hw->unlockAPI();
+
+    // Fix panorama in Google Camera after recording video
+    char *orig_params = hw->getParameters();
+    if (orig_params) {
+        android::CameraParameters params;
+        params.unflatten(android::String8(orig_params));
+        hw->putParameters(orig_params);
+
+        // Set video size back to default (1080p) after 4k is used
+        const char *video_size = params.get("video-size");
+        if (video_size && (!strcmp(video_size, "3840x2160") ||
+                            !strcmp(video_size, "4096x2160"))) {
+            params.set("video-size", "1920x1080");
+        }
+
+        // Disable recording hint
+        hw->mParameters.setRecordingHintValue(0);
+        hw->set_parameters(device, params.flatten().string());
+    }
+
     CDBG_HIGH("[KPI Perf] %s: X", __func__);
 }
+
 
 /*===========================================================================
  * FUNCTION   : recording_enabled
@@ -517,6 +569,7 @@ int QCamera2HardwareInterface::recording_enabled(struct camera_device *device)
 void QCamera2HardwareInterface::release_recording_frame(
             struct camera_device *device, const void *opaque)
 {
+    int32_t ret = NO_ERROR;
     QCamera2HardwareInterface *hw =
         reinterpret_cast<QCamera2HardwareInterface *>(device->priv);
     if (!hw) {
@@ -524,9 +577,10 @@ void QCamera2HardwareInterface::release_recording_frame(
         return;
     }
     CDBG_HIGH("%s: E", __func__);
+
     hw->lockAPI();
     qcamera_api_result_t apiResult;
-    int32_t ret = hw->processAPI(QCAMERA_SM_EVT_RELEASE_RECORIDNG_FRAME, (void *)opaque);
+    ret = hw->processAPI(QCAMERA_SM_EVT_RELEASE_RECORIDNG_FRAME, (void *)opaque);
     if (ret == NO_ERROR) {
         hw->waitAPIResult(QCAMERA_SM_EVT_RELEASE_RECORIDNG_FRAME, &apiResult);
     }
@@ -1677,13 +1731,14 @@ QCameraMemory *QCamera2HardwareInterface::allocateStreamBuf(cam_stream_type_t st
         {
             if (isNoDisplayMode()) {
                 mem = new QCameraStreamMemory(mGetMemory,
+                        mCallbackCookie,
                         bCachedMem,
                         (bPoolMem) ? &m_memoryPool : NULL,
                         stream_type);
             } else {
                 cam_dimension_t dim;
                 QCameraGrallocMemory *grallocMemory =
-                    new QCameraGrallocMemory(mGetMemory);
+                    new QCameraGrallocMemory(mGetMemory, mCallbackCookie);
 
                 mParameters.getStreamDimension(stream_type, dim);
                 if (grallocMemory)
@@ -1697,11 +1752,11 @@ QCameraMemory *QCamera2HardwareInterface::allocateStreamBuf(cam_stream_type_t st
     case CAM_STREAM_TYPE_POSTVIEW:
         {
             if (isPreviewRestartEnabled() || isNoDisplayMode()) {
-                mem = new QCameraStreamMemory(mGetMemory, bCachedMem);
+                mem = new QCameraStreamMemory(mGetMemory, mCallbackCookie, bCachedMem);
             } else {
                 cam_dimension_t dim;
                 QCameraGrallocMemory *grallocMemory =
-                    new QCameraGrallocMemory(mGetMemory);
+                    new QCameraGrallocMemory(mGetMemory, mCallbackCookie);
 
                 mParameters.getStreamDimension(stream_type, dim);
                 if (grallocMemory) {
@@ -1721,6 +1776,7 @@ QCameraMemory *QCamera2HardwareInterface::allocateStreamBuf(cam_stream_type_t st
     case CAM_STREAM_TYPE_METADATA:
     case CAM_STREAM_TYPE_OFFLINE_PROC:
         mem = new QCameraStreamMemory(mGetMemory,
+                mCallbackCookie,
                 bCachedMem,
                 (bPoolMem) ? &m_memoryPool : NULL,
                 stream_type);
@@ -1735,7 +1791,12 @@ QCameraMemory *QCamera2HardwareInterface::allocateStreamBuf(cam_stream_type_t st
                 bCachedMem = QCAMERA_ION_USE_CACHE;
             }
             ALOGD("%s: vidoe buf using cached memory = %d", __func__, bCachedMem);
-            mem = new QCameraVideoMemory(mGetMemory, bCachedMem);
+            QCameraVideoMemory *videoMemory = new QCameraVideoMemory(mGetMemory, mCallbackCookie, bCachedMem);
+            int usage = 0;
+            cam_format_t fmt;
+            mParameters.getStreamFormat(CAM_STREAM_TYPE_VIDEO,fmt);
+            videoMemory->setVideoInfo(usage, fmt);
+            mem = videoMemory;
         }
         break;
     case CAM_STREAM_TYPE_DEFAULT:
@@ -2149,6 +2210,7 @@ int QCamera2HardwareInterface::stopRecording()
     CDBG_HIGH("%s: E", __func__);
     int rc = stopChannel(QCAMERA_CH_TYPE_VIDEO);
 
+    m_cbNotifier.flushVideoNotifications();
 #ifdef HAS_MULTIMEDIA_HINTS
     if (m_pPowerModule) {
         if (m_pPowerModule->powerHint) {
@@ -6644,13 +6706,14 @@ int32_t QCamera2HardwareInterface::waitDefferedWork(int32_t &job_id)
 bool QCamera2HardwareInterface::isRegularCapture()
 {
     bool ret = false;
-
+#if 0
     if (numOfSnapshotsExpected() == 1 &&
         !isLongshotEnabled() &&
         !mParameters.getRecordingHintValue() &&
         !isZSLMode() && !mParameters.isHDREnabled()) {
             ret = true;
     }
+#endif
     return ret;
 }
 
