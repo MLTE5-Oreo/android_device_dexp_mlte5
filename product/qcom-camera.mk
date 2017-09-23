@@ -20,6 +20,4 @@ PRODUCT_PROPERTY_OVERRIDES += \
     camera.disable_treble=true \
     persist.camera.cpp.duplication=false \
     persist.camera.hal.debug.mask=0 \
-    media.stagefright.legacyencoder=true \
-    media.stagefright.less-secure=true \
     ro.camera.sensors=ov8865_cm9462 ov2680
