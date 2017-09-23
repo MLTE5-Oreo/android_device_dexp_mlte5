@@ -422,42 +422,11 @@ int QCamera2HardwareInterface::store_meta_data_in_buffers(
 int QCamera2HardwareInterface::start_recording(struct camera_device *device)
 {
     int ret = NO_ERROR;
-    int width, height;
     QCamera2HardwareInterface *hw =
         reinterpret_cast<QCamera2HardwareInterface *>(device->priv);
     if (!hw) {
         ALOGE("NULL camera device");
         return BAD_VALUE;
-    }
-    // Preview window changes for 720p and higher
-    hw->mParameters.getVideoSize(&width, &height);
-    if ((width * height) >= (1280 * 720)) {
-        char *orig_params = hw->getParameters();
-        if (orig_params) {
-            android::CameraParameters params;
-            params.unflatten(android::String8(orig_params));
-            hw->putParameters(orig_params);
-
-            // Set preview size to video size
-            char video_dim[10];
-            snprintf(video_dim, sizeof(video_dim), "%dx%d", width, height);
-            params.set("preview-size", video_dim);
-
-            const char *hfrStr = params.get("video-hfr");
-            const char *hsrStr = params.get("video-hsr");
-
-            // Use yuv420sp for high framerates
-            if ((hfrStr != NULL && strcmp(hfrStr, "off")) ||
-                (hsrStr != NULL && strcmp(hsrStr, "off")))
-                params.set("preview-format", "yuv420sp");
-            else
-                params.set("preview-format", "nv12-venus");
-
-            hw->set_parameters(device, params.flatten().string());
-            // Restart preview to propagate changes to preview window
-            hw->stop_preview(device);
-            hw->start_preview(device);
-        }
     }
     CDBG_HIGH("[KPI Perf] %s: E PROFILE_START_RECORDING", __func__);
     hw->lockAPI();
@@ -499,26 +468,6 @@ void QCamera2HardwareInterface::stop_recording(struct camera_device *device)
         hw->waitAPIResult(QCAMERA_SM_EVT_STOP_RECORDING, &apiResult);
     }
     hw->unlockAPI();
-
-    // Fix panorama in Google Camera after recording video
-    char *orig_params = hw->getParameters();
-    if (orig_params) {
-        android::CameraParameters params;
-        params.unflatten(android::String8(orig_params));
-        hw->putParameters(orig_params);
-
-        // Set video size back to default (1080p) after 4k is used
-        const char *video_size = params.get("video-size");
-        if (video_size && (!strcmp(video_size, "3840x2160") ||
-                            !strcmp(video_size, "4096x2160"))) {
-            params.set("video-size", "1920x1080");
-        }
-
-        // Disable recording hint
-        hw->mParameters.setRecordingHintValue(0);
-        hw->set_parameters(device, params.flatten().string());
-    }
-
     CDBG_HIGH("[KPI Perf] %s: X", __func__);
 }
 
