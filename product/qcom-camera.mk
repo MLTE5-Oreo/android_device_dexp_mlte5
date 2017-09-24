@@ -4,7 +4,10 @@ PRODUCT_PACKAGES += \
     camera.device@1.0-impl \
     vendor.qti.hardware.camera.device@1.0_vendor \
     camera.msm8916 \
-    libmm-qcamera
+    libmm-qcamera \
+    Snap \
+    org.codeaurora.camera \
+    org.codeaurora.camera.xml
 
 # Permissions
 PRODUCT_COPY_FILES += \

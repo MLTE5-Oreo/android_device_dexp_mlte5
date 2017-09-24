@@ -530,7 +530,6 @@ private:
     void                          *mCallbackCookie;
 
     QCameraStateMachine m_stateMachine;   // state machine
-    bool m_smThreadActive;
     QCameraPostProcessor m_postprocessor; // post processor
     QCameraThermalAdapter &m_thermalAdapter;
     QCameraCbNotifier m_cbNotifier;
