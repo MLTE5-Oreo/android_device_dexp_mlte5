@@ -1037,13 +1037,6 @@ QCamera2HardwareInterface::QCamera2HardwareInterface(int cameraId)
     pthread_cond_init(&m_int_cond, NULL);
 
     memset(m_channels, 0, sizeof(m_channels));
-
-#ifdef HAS_MULTIMEDIA_HINTS
-    if (hw_get_module(POWER_HARDWARE_MODULE_ID, (const hw_module_t **)&m_pPowerModule)) {
-        ALOGE("%s: %s module not found", __func__, POWER_HARDWARE_MODULE_ID);
-    }
-#endif
-
     memset(mDeffOngoingJobs, 0, sizeof(mDeffOngoingJobs));
 
     //reset preview frame skip
@@ -2129,15 +2122,6 @@ int QCamera2HardwareInterface::startRecording()
         rc = startChannel(QCAMERA_CH_TYPE_VIDEO);
     }
 
-#ifdef HAS_MULTIMEDIA_HINTS
-    if (rc == NO_ERROR) {
-        if (m_pPowerModule) {
-            if (m_pPowerModule->powerHint) {
-                m_pPowerModule->powerHint(m_pPowerModule, POWER_HINT_VIDEO_ENCODE, (void *)"state=1");
-            }
-        }
-    }
-#endif
     CDBG_HIGH("%s: X", __func__);
     return rc;
 }
@@ -2159,13 +2143,6 @@ int QCamera2HardwareInterface::stopRecording()
     int rc = stopChannel(QCAMERA_CH_TYPE_VIDEO);
 
     m_cbNotifier.flushVideoNotifications();
-#ifdef HAS_MULTIMEDIA_HINTS
-    if (m_pPowerModule) {
-        if (m_pPowerModule->powerHint) {
-            m_pPowerModule->powerHint(m_pPowerModule, POWER_HINT_VIDEO_ENCODE, (void *)"state=0");
-        }
-    }
-#endif
     CDBG_HIGH("%s: X", __func__);
     return rc;
 }
